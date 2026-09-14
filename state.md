@@ -1,13 +1,14 @@
 # Run state
 
-Last run: 2026-09-14 (run id 34879020709)
-Tasks done this run: 1 (discover commands - partial), 2 (identify opportunities - partial scan), 3 (implement improvement - merge_with_building_footprints.py redundant mask pass), 7 (monthly summary)
-Tasks skipped this run: 4 (no existing efficiency-improver PRs to maintain yet - this is the first), 5 (no efficiency/performance issues found open in repo at time of scan), 6 (measurement infra - deferred to next run)
+Last run: 2026-09-14 (run id 34888275547)
+Tasks done this run: 1 (skip - commands already validated), 2 (identify opportunities - reviewed download_building_footprints.py, bda/samplers.py, bda/datasets.py, bda/trainers.py, bda/datamodules.py), 3 (implement improvement - vectorized RandomGeoSampler.__iter__), 7 (monthly summary)
+Tasks skipped this run: 4 (checked - PR #1 already merged by maintainer, no open efficiency-improver PRs to maintain), 5 (no new efficiency/performance issues found open besides own monthly summary), 6 (measurement infra - deferred again)
 
-Backlog cursor: next run should explore bda/datasets.py, bda/datamodules.py, bda/samplers.py, bda/trainers.py for training-loop efficiency (highest estimated energy impact - GPU training loop), then scripts/ and remaining top-level scripts (create_masks.py, fine_tune.py, inference.py, project_setup.py, download_building_footprints.py, merge_vector_files.py).
+Backlog cursor: next run should investigate bda/datasets.py TileDataset.__getitem__ (per-sample rasterio file-open overhead, I/O-bound optimization candidate — caching/pooling open dataset handles), then create_masks.py, fine_tune.py, inference.py, project_setup.py, scripts/merge_vector_files.py.
 
-Monthly activity issue: created/updated 2026-09for 2026-09 in this run (first one, need to verify title/number in future runs by searching label:efficiency).
+Monthly activity issue: #2 "[efficiency-improver] Monthly Activity 2026-09" (label: efficiency) - existing issue for this month, updated in this run (not created new).
 
-## Completed this run (2026-09-14, run 34879020709)
-- Created draft PR (branch efficiency/merge-footprints-single-pass): merge_with_building_footprints.py redundant mask pass fix.
-- Created issue "[efficiency-improver] Monthly Activity 2026-09" (label: efficiency).
+## Completed this run (2026-09-14, run 34888275547)
+- Verified PR #1 (merge-footprints-single-pass) was merged by maintainer via PR #1 merge commit on main.
+- Created draft PR (branch efficiency/vectorize-random-geo-sampler): vectorized bda/samplers.py RandomGeoSampler.__iter__ random draws, ~31x measured speedup on the sampling logic itself (0.4605s -> 0.0148s for one epoch, 32,768 samples).
+- Updated Monthly Activity issue #2 with new run history entry and refreshed backlog table.

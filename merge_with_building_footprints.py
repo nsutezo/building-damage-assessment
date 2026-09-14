@@ -59,10 +59,15 @@ def main(args):
     unknown_val_per_geom = []
     print(f"Reading predictions from {args.predictions_fn}")
     with rasterio.open(args.predictions_fn) as f:
-        # Compute the fraction of damage per geometry and buffer size option
+        # Compute the fraction of damage per geometry and buffer size option.
+        # The buffer=0 mask is reused to also compute the "unknown" (cloud
+        # covered) fraction, avoiding a second identical rasterio.mask.mask()
+        # pass over every geometry (previously done in a separate loop below).
         for building_geom in tqdm(projected_building_geoms):
             t_dmg_vals = []
             t_built_vals = []
+            t_unknown_val = 1
+
             for buffer in [0, 10, 20]:
                 building_shape = shapely.geometry.shape(building_geom).buffer(buffer)
 
@@ -89,6 +94,12 @@ def main(args):
                         fraction_built = 0
                     t_built_vals.append(fraction_built)
                     t_dmg_vals.append(fraction_damaged)
+
+                    if buffer == 0:
+                        if 4 in val_counts:
+                            t_unknown_val = val_counts[4] / N
+                        else:
+                            t_unknown_val = 0
                 except ValueError as e:
                     print(e)
                     t_built_vals.append(0)
@@ -96,32 +107,7 @@ def main(args):
 
             built_vals_per_geom.append(t_built_vals)
             damage_vals_per_geom.append(t_dmg_vals)
-
-
-        # Compute the fraction of unknown (cloud covered) pixels per geometry
-        for building_geom in tqdm(projected_building_geoms):
-            building_shape = shapely.geometry.shape(building_geom)
-
-            try:
-                building_mask, transform = rasterio.mask.mask(
-                    f, [building_shape], crop=True, nodata=0, filled=True
-                )
-                vals, counts = np.unique(building_mask, return_counts=True)
-                val_counts = dict(zip(vals, counts))
-
-                N = 0
-                for k, v in val_counts.items():
-                    if k != 0:
-                        N += v
-
-                if 4 in val_counts:
-                    fraction_unknown = val_counts[4] / N
-                else:
-                    fraction_unknown = 0
-                unknown_val_per_geom.append(fraction_unknown)
-            except ValueError as e:
-                print(e)
-                unknown_val_per_geom.append(1)
+            unknown_val_per_geom.append(t_unknown_val)
 
     ############################################
     # Write damage values to file

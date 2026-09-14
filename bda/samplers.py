@@ -37,15 +37,23 @@ class RandomGeoSampler(Sampler):
         self.num_tiles = len(self.tile_sample_weights)
 
     def __iter__(self):
-        for _ in range(len(self)):
-            i = np.random.choice(self.num_tiles, p=self.tile_sample_weights)
+        # Draw all random indices/offsets for the epoch in a handful of vectorized
+        # numpy calls instead of 3 separate per-sample RNG calls (np.random.choice
+        # + 2x np.random.randint), each of which pays O(num_tiles) setup overhead
+        # (e.g. rebuilding the cumulative weight array) on every call. Batching
+        # this drastically reduces per-sample CPU/energy overhead, especially for
+        # large ``length`` values (train_batches_per_epoch * batch_size).
+        n = len(self)
+        tile_heights = np.asarray(self.tile_heights)
+        tile_widths = np.asarray(self.tile_widths)
 
-            max_y_size = max(self.tile_heights[i] - self.patch_size, 1)
-            max_x_size = max(self.tile_widths[i] - self.patch_size, 1)
+        indices = np.random.choice(self.num_tiles, size=n, p=self.tile_sample_weights)
+        max_y_sizes = np.maximum(tile_heights[indices] - self.patch_size, 1)
+        max_x_sizes = np.maximum(tile_widths[indices] - self.patch_size, 1)
+        ys = (np.random.random(n) * max_y_sizes).astype(np.int64)
+        xs = (np.random.random(n) * max_x_sizes).astype(np.int64)
 
-            y = np.random.randint(0, max_y_size)
-            x = np.random.randint(0, max_x_size)
-
+        for i, y, x in zip(indices.tolist(), ys.tolist(), xs.tolist()):
             yield (i, y, x, self.patch_size)
 
     def __len__(self):

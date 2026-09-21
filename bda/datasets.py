@@ -78,8 +78,25 @@ class TileDataset(Dataset):
 
         self.transforms = transforms
 
+        # Cache of open rasterio dataset handles, keyed by filename, so that
+        # repeated __getitem__ calls (every training/validation sample) reuse
+        # an already-open file instead of paying the open/close syscall and
+        # header-parsing overhead each time. Each DataLoader worker process
+        # gets its own copy of this dataset (and thus its own cache), so this
+        # is safe with num_workers > 0.
+        self._handle_cache = {}
+
     def __len__(self):
         return len(self.image_fns)
+
+    def _get_handle(self, fn):
+        """Return a cached open rasterio dataset handle for `fn`, opening it
+        on first access."""
+        handle = self._handle_cache.get(fn)
+        if handle is None:
+            handle = rasterio.open(fn)
+            self._handle_cache[fn] = handle
+        return handle
 
     def __getitem__(self, index):
         i, y, x, patch_size = index
@@ -95,8 +112,7 @@ class TileDataset(Dataset):
         stack = []
         for j in range(len(self.image_fns[i])):
             image_fn = self.image_fns[i][j]
-            with rasterio.open(image_fn) as f:
-                image = f.read(window=window)
+            image = self._get_handle(image_fn).read(window=window)
             stack.append(image)
         stack = np.concatenate(stack, axis=0)
         if self.num_channels is not None:
@@ -106,11 +122,17 @@ class TileDataset(Dataset):
         # Load mask
         if self.mask_fns is not None:
             mask_fn = self.mask_fns[i]
-            with rasterio.open(mask_fn) as f:
-                mask = f.read(window=window)
+            mask = self._get_handle(mask_fn).read(window=window)
             sample["mask"] = torch.from_numpy(mask).long()
 
         if self.transforms is not None:
             sample = self.transforms(sample)
 
         return sample
+
+    def __del__(self):
+        for handle in getattr(self, "_handle_cache", {}).values():
+            try:
+                handle.close()
+            except Exception:
+                pass

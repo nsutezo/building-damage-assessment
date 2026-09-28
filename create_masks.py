@@ -21,6 +21,7 @@ import numpy as np
 import rasterio
 import rasterio.mask
 import shapely.geometry
+from shapely.strtree import STRtree
 
 from bda.config import get_args
 
@@ -123,7 +124,19 @@ def cluster_labels(
     bounds_geom = fiona.transform.transform_geom(label_crs, dst_crs, bounds_geom)
     shape = shapely.geometry.shape(bounds_geom)
     minx, miny, maxx, maxy = shape.bounds
-    
+
+    # Transform each feature geometry to dst_crs exactly once, up front, instead of
+    # once per grid cell (previously O(num_cells * num_features) repeated transforms).
+    feature_shapes = [
+        shapely.geometry.shape(
+            fiona.transform.transform_geom(src_crs, dst_crs, feature["geometry"])
+        )
+        for feature in features
+    ]
+    # Build a spatial index once so per-cell intersection queries only examine nearby
+    # candidates (O(log n)) instead of scanning every feature per grid cell.
+    tree = STRtree(feature_shapes)
+
     # Create grid cells
     clusters = []
     cluster_id = 0
@@ -131,18 +144,12 @@ def cluster_labels(
     for x in np.arange(minx, maxx, cluster_size):
         for y in np.arange(miny, maxy, cluster_size):
             grid_cell = shapely.geometry.box(x, y, x + cluster_size, y + cluster_size)
-            
-            # Find features that intersect this grid cell
+
+            # Find features that intersect this grid cell using the spatial index
             cluster_features = []
-            for feature in features:
-                # Transform feature geometry to dst_crs
-                feature_geom = fiona.transform.transform_geom(
-                    src_crs, dst_crs, feature["geometry"]
-                )
-                feature_shape = shapely.geometry.shape(feature_geom)
-                
-                if grid_cell.intersects(feature_shape):
-                    cluster_features.append(feature)
+            for idx in tree.query(grid_cell):
+                if grid_cell.intersects(feature_shapes[idx]):
+                    cluster_features.append(features[idx])
             
             if cluster_features:
                 # Get the intersection of grid cell and features bounds
